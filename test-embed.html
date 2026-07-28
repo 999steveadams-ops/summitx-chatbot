@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Embed test — a pretend client website</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 0;
+        color: #1f2937;
+        background: #f8fafc;
+      }
+      .hero {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 80px 24px;
+      }
+      h1 { font-size: 2rem; }
+      p { line-height: 1.6; color: #475569; }
+      code { background: #e2e8f0; padding: 2px 6px; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <div class="hero">
+      <h1>Acme Coffee Co. (demo host page)</h1>
+      <p>
+        This file simulates a client's own website. The floating chat bubble in the
+        bottom-right corner is injected entirely by the one-line SummitX embed snippet
+        below — nothing else on this page knows about the chatbot.
+      </p>
+      <p>
+        To test: run <code>npm run dev</code>, create a client in the admin dashboard,
+        then replace <code>REPLACE_WITH_TENANT_ID</code> below with that client's id
+        (shown on its card) and open this file in a browser.
+      </p>
+    </div>
+
+    <!-- SummitX ChatBot embed snippet -->
+    <script
+      src="http://localhost:3000/embed.js?id=REPLACE_WITH_TENANT_ID"
+      async
+    ></script>
+  </body>
+</html>
