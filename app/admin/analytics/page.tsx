@@ -11,6 +11,13 @@ export default async function AdminAnalyticsPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/admin/login");
 
+  const { data: staff } = await supabase
+    .from("admins")
+    .select("user_id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!staff) redirect("/portal");
+
   const since = new Date(Date.now() - 30 * 864e5).toISOString();
 
   // RLS: staff see all tenants' data.

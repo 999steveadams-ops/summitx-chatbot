@@ -16,6 +16,15 @@ export default async function AdminPage() {
   // Defense in depth — proxy.ts already guards this route.
   if (!user) redirect("/admin/login");
 
+  // Staff only. A client (tenant member) who signs in should go to their portal,
+  // not the agency dashboard.
+  const { data: staff } = await supabase
+    .from("admins")
+    .select("user_id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!staff) redirect("/portal");
+
   const { data: tenants } = await supabase
     .from("tenants")
     .select("*")
