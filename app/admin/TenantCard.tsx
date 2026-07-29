@@ -5,6 +5,90 @@ import { useFormStatus } from "react-dom";
 import type { Tenant } from "@/lib/types";
 import { createClientLogin, deleteTenant, updateTenant } from "./actions";
 
+/**
+ * Crawl the client's website so the assistant answers from real content
+ * instead of guessing.
+ */
+function KnowledgeSection({
+  tenantId,
+  websiteUrl,
+  lastScannedAt,
+}: {
+  tenantId: string;
+  websiteUrl: string | null;
+  lastScannedAt: string | null;
+}) {
+  const [url, setUrl] = useState(websiteUrl ?? "");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  async function scan() {
+    if (!url.trim()) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenantId, websiteUrl: url.trim() }),
+      });
+      const data = await res.json();
+      setMsg(
+        res.ok
+          ? { ok: true, text: `Learned ${data.chunks} passages from ${data.pages} pages.` }
+          : { ok: false, text: data.error ?? "Scan failed." },
+      );
+    } catch {
+      setMsg({ ok: false, text: "Scan failed — the site may be slow or unreachable." });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-6 border-t border-zinc-100 pt-4">
+      <p className="text-sm font-semibold text-zinc-700">Website knowledge</p>
+      <p className="mb-2 text-xs text-zinc-400">
+        Scan the client&apos;s site so the bot answers from their real content.
+        {lastScannedAt
+          ? ` Last scanned ${new Date(lastScannedAt).toLocaleString("en-US")}.`
+          : " Not scanned yet."}
+      </p>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="https://theirwebsite.com"
+          className="min-w-[220px] flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
+        />
+        <button
+          onClick={scan}
+          disabled={busy || !url.trim()}
+          className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-zinc-700 disabled:opacity-50"
+        >
+          {busy ? "Scanning…" : "Scan website"}
+        </button>
+      </div>
+
+      {busy && (
+        <p className="mt-2 text-xs text-zinc-500">
+          Reading pages and building the index — this can take a minute.
+        </p>
+      )}
+      {msg && (
+        <p
+          className={`mt-2 rounded-lg px-3 py-2 text-xs ${
+            msg.ok ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"
+          }`}
+        >
+          {msg.text}
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** Create a portal login so this client can read their own chat history. */
 function ClientLoginSection({
   tenantId,
@@ -218,6 +302,13 @@ export default function TenantCard({
           Paste this just before <code>&lt;/body&gt;</code> on the client&apos;s website.
         </p>
       </div>
+
+      {/* Website knowledge base */}
+      <KnowledgeSection
+        tenantId={tenant.id}
+        websiteUrl={tenant.website_url ?? null}
+        lastScannedAt={tenant.last_scanned_at ?? null}
+      />
 
       {/* Client portal access */}
       <ClientLoginSection tenantId={tenant.id} appUrl={appUrl} />

@@ -3,6 +3,43 @@
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+
+/**
+ * Assistant replies come back as Markdown. Render a deliberately small subset so
+ * the bubble stays compact and nothing can inject raw HTML (react-markdown does
+ * not use dangerouslySetInnerHTML, and we render no `html` nodes).
+ */
+function Markdown({ children }: { children: string }) {
+  return (
+    <div className="space-y-2 [&_a]:underline [&_li]:ml-4 [&_li]:list-disc">
+      <ReactMarkdown
+        components={{
+          p: ({ children }) => <p className="leading-relaxed">{children}</p>,
+          ul: ({ children }) => <ul className="space-y-1">{children}</ul>,
+          ol: ({ children }) => (
+            <ol className="space-y-1 [&_li]:list-decimal">{children}</ol>
+          ),
+          strong: ({ children }) => (
+            <strong className="font-semibold">{children}</strong>
+          ),
+          code: ({ children }) => (
+            <code className="rounded bg-black/10 px-1 py-0.5 text-[12px]">
+              {children}
+            </code>
+          ),
+          a: ({ href, children }) => (
+            <a href={href} target="_blank" rel="noopener noreferrer nofollow">
+              {children}
+            </a>
+          ),
+        }}
+      >
+        {children}
+      </ReactMarkdown>
+    </div>
+  );
+}
 
 function messageText(message: UIMessage): string {
   return message.parts
@@ -119,7 +156,11 @@ export default function ChatWidget({
                 }`}
                 style={isUser ? { backgroundColor: "var(--brand)" } : undefined}
               >
-                {messageText(m)}
+                {isUser ? (
+                  messageText(m)
+                ) : (
+                  <Markdown>{messageText(m)}</Markdown>
+                )}
               </div>
             </div>
           );

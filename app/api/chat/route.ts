@@ -1,6 +1,7 @@
 import { google } from "@ai-sdk/google";
 import { convertToModelMessages, streamText, type UIMessage } from "ai";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { embedTexts } from "@/lib/crawler";
 
 // Allow streamed responses up to 30 seconds.
 export const maxDuration = 30;
@@ -100,9 +101,59 @@ export async function POST(req: Request) {
     }
   }
 
+  // ---- Retrieval: ground the reply in the client's own website content ----
+  // Without this the model has no site knowledge and will confidently invent
+  // (or deny) details "from the website".
+  let systemPrompt = tenant.system_prompt;
+  const question = lastUser ? textOf(lastUser) : "";
+
+  if (question) {
+    const [queryVector] = await embedTexts([question], "RETRIEVAL_QUERY");
+
+    if (queryVector) {
+      const { data: matches } = await admin.rpc("match_documents", {
+        p_tenant_id: tenantId,
+        p_embedding: JSON.stringify(queryVector),
+        p_match_count: 6,
+      });
+
+      const hits = (matches ?? []) as {
+        url: string;
+        title: string | null;
+        content: string;
+        similarity: number;
+      }[];
+
+      const useful = hits.filter((h) => h.similarity > 0.35);
+
+      if (useful.length > 0) {
+        const context = useful
+          .map((h, i) => `[${i + 1}] ${h.title || h.url}\n${h.content}`)
+          .join("\n\n---\n\n");
+
+        systemPrompt =
+          `${tenant.system_prompt}\n\n` +
+          `## Website content\n` +
+          `The excerpts below were taken from this business's own website. Answer ` +
+          `using them whenever they are relevant, and treat them as the source of ` +
+          `truth about the business. If the answer genuinely isn't in them, say you ` +
+          `don't have that detail and offer to pass the question to the team — ` +
+          `never invent specifics such as prices, dates, names, or policies.\n\n` +
+          context;
+      } else {
+        systemPrompt =
+          `${tenant.system_prompt}\n\n` +
+          `## Note\n` +
+          `No website content matched this question. Do not claim to be reading ` +
+          `the website. Answer only from what you genuinely know, and offer to ` +
+          `connect the visitor with the team for specifics.`;
+      }
+    }
+  }
+
   const result = streamText({
     model: google("gemini-2.5-flash"),
-    system: tenant.system_prompt,
+    system: systemPrompt,
     messages: await convertToModelMessages(messages),
     // Fires once the full reply has streamed — log it and bump the conversation.
     onEnd: async ({ text }) => {
