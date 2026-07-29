@@ -3,7 +3,93 @@
 import { useState } from "react";
 import { useFormStatus } from "react-dom";
 import type { Tenant } from "@/lib/types";
-import { deleteTenant, updateTenant } from "./actions";
+import { createClientLogin, deleteTenant, updateTenant } from "./actions";
+
+/** Create a portal login so this client can read their own chat history. */
+function ClientLoginSection({
+  tenantId,
+  appUrl,
+}: {
+  tenantId: string;
+  appUrl: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [pending, setPending] = useState(false);
+
+  async function submit(formData: FormData) {
+    setPending(true);
+    setResult(await createClientLogin(formData));
+    setPending(false);
+  }
+
+  return (
+    <div className="mt-6 border-t border-zinc-100 pt-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-semibold text-zinc-700">Client portal access</p>
+          <p className="text-xs text-zinc-400">
+            Let this client sign in at {appUrl}/portal to read their chat history.
+          </p>
+        </div>
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-700 transition hover:border-zinc-400"
+        >
+          {open ? "Cancel" : "Add login"}
+        </button>
+      </div>
+
+      {open && (
+        <form action={submit} className="mt-3 flex flex-wrap items-end gap-2">
+          <input type="hidden" name="tenant_id" value={tenantId} />
+          <div className="flex-1 min-w-[180px]">
+            <label className="mb-1 block text-xs font-medium text-zinc-600">
+              Client email
+            </label>
+            <input
+              name="email"
+              type="email"
+              required
+              placeholder="owner@theirbusiness.com"
+              className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
+            />
+          </div>
+          <div className="flex-1 min-w-[160px]">
+            <label className="mb-1 block text-xs font-medium text-zinc-600">
+              Temporary password
+            </label>
+            <input
+              name="password"
+              type="text"
+              required
+              minLength={8}
+              placeholder="min 8 characters"
+              className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={pending}
+            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50"
+          >
+            {pending ? "Creating…" : "Create"}
+          </button>
+        </form>
+      )}
+
+      {result && (
+        <p
+          className={`mt-2 rounded-lg px-3 py-2 text-xs ${
+            result.ok ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"
+          }`}
+        >
+          {result.message}
+        </p>
+      )}
+    </div>
+  );
+}
 
 function SaveButton() {
   const { pending } = useFormStatus();
@@ -132,6 +218,9 @@ export default function TenantCard({
           Paste this just before <code>&lt;/body&gt;</code> on the client&apos;s website.
         </p>
       </div>
+
+      {/* Client portal access */}
+      <ClientLoginSection tenantId={tenant.id} appUrl={appUrl} />
 
       {/* Delete */}
       <div className="mt-4 border-t border-zinc-100 pt-4">

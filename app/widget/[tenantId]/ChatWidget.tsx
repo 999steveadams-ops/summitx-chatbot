@@ -21,10 +21,41 @@ export default function ChatWidget({
   brandColor: string;
 }) {
   const [input, setInput] = useState("");
+
+  // One conversation per browser tab/session; visitorId persists across visits so
+  // the portal can tell repeat visitors apart. Created lazily on the client only.
+  const [ids] = useState(() => {
+    if (typeof window === "undefined") {
+      return { conversationId: "", visitorId: "" };
+    }
+    const newId = () =>
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : String(Date.now());
+
+    const convKey = `summitx_conv_${tenantId}`;
+    const visKey = "summitx_visitor";
+    let conversationId = sessionStorage.getItem(convKey) ?? "";
+    if (!conversationId) {
+      conversationId = newId();
+      sessionStorage.setItem(convKey, conversationId);
+    }
+    let visitorId = localStorage.getItem(visKey) ?? "";
+    if (!visitorId) {
+      visitorId = newId();
+      localStorage.setItem(visKey, visitorId);
+    }
+    return { conversationId, visitorId };
+  });
+
   const { messages, sendMessage, status } = useChat({
     transport: new DefaultChatTransport({
       api: "/api/chat",
-      body: { tenantId },
+      body: {
+        tenantId,
+        conversationId: ids.conversationId,
+        visitorId: ids.visitorId,
+      },
     }),
   });
 

@@ -36,17 +36,20 @@ export async function proxy(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;
-  const isLogin = pathname === "/admin/login";
+  const isPortal = pathname.startsWith("/portal");
+  const loginPath = isPortal ? "/portal/login" : "/admin/login";
+  const homePath = isPortal ? "/portal" : "/admin";
+  const isLogin = pathname === loginPath;
 
   if (!user && !isLogin) {
     const url = request.nextUrl.clone();
-    url.pathname = "/admin/login";
+    url.pathname = loginPath;
     return NextResponse.redirect(url);
   }
 
   if (user && isLogin) {
     const url = request.nextUrl.clone();
-    url.pathname = "/admin";
+    url.pathname = homePath;
     return NextResponse.redirect(url);
   }
 
@@ -54,6 +57,7 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Only run on admin routes. The public widget, chat API, and embed script are untouched.
-  matcher: ["/admin/:path*"],
+  // Guard the two signed-in areas. The public widget, chat API, and embed
+  // script are deliberately untouched so visitors never hit auth.
+  matcher: ["/admin/:path*", "/portal/:path*"],
 };
