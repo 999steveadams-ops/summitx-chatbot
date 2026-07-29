@@ -50,25 +50,26 @@ export async function POST(req: Request) {
   });
   if (error) return Response.json({ error: error.message }, { status: 500 });
 
-  // Notify BOTH the client and the agency. Best-effort — the lead is already saved.
-  const recipients = [tenant.notification_email, process.env.AGENCY_NOTIFICATION_EMAIL]
-    .filter((e): e is string => !!e && e.includes("@"));
+  // Notify the client and the agency SEPARATELY (best-effort — the lead is
+  // already saved). Sending separately means one failing recipient (e.g. an
+  // address Resend won't send to before a domain is verified) doesn't block the
+  // other. The agency address is usually the Resend account owner, so it works
+  // even in test mode.
+  const subject = `New lead from your ${tenant.business_name} chatbot`;
+  const html =
+    `<h2>New lead from your website chatbot</h2>` +
+    `<p><b>Business:</b> ${esc(tenant.business_name)}</p>` +
+    `<ul>` +
+    `<li><b>Name:</b> ${esc(name) || "—"}</li>` +
+    `<li><b>Email:</b> ${esc(email) || "—"}</li>` +
+    `<li><b>Phone:</b> ${esc(phone) || "—"}</li>` +
+    (message ? `<li><b>Message:</b> ${esc(message)}</li>` : "") +
+    `</ul>`;
 
-  if (recipients.length > 0) {
-    await sendEmail({
-      to: recipients,
-      subject: `New lead from your ${tenant.business_name} chatbot`,
-      html:
-        `<h2>New lead from your website chatbot</h2>` +
-        `<p><b>Business:</b> ${esc(tenant.business_name)}</p>` +
-        `<ul>` +
-        `<li><b>Name:</b> ${esc(name) || "—"}</li>` +
-        `<li><b>Email:</b> ${esc(email) || "—"}</li>` +
-        `<li><b>Phone:</b> ${esc(phone) || "—"}</li>` +
-        (message ? `<li><b>Message:</b> ${esc(message)}</li>` : "") +
-        `</ul>`,
-    });
-  }
+  const targets = [tenant.notification_email, process.env.AGENCY_NOTIFICATION_EMAIL].filter(
+    (e): e is string => !!e && e.includes("@"),
+  );
+  await Promise.all(targets.map((to) => sendEmail({ to, subject, html })));
 
   return Response.json({ ok: true });
 }
