@@ -36,6 +36,12 @@ export default async function AdminPage() {
             SummitX ChatBot
           </div>
           <div className="flex items-center gap-4">
+            <a
+              href="/admin/analytics"
+              className="text-sm font-medium text-indigo-600 hover:text-indigo-500"
+            >
+              Analytics &amp; leads
+            </a>
             <span className="hidden text-sm text-zinc-500 sm:inline">{user.email}</span>
             <form action={signOut}>
               <button className="rounded-full border border-zinc-300 px-4 py-1.5 text-sm font-medium text-zinc-700 transition hover:border-zinc-400">

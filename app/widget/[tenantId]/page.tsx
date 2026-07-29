@@ -17,7 +17,7 @@ export default async function WidgetPage({
   const admin = createAdminClient();
   const { data: tenant } = await admin
     .from("tenants")
-    .select("business_name, brand_color")
+    .select("business_name, brand_color, logo_url, greeting_message, starter_questions")
     .eq("id", tenantId)
     .single();
 
@@ -29,11 +29,20 @@ export default async function WidgetPage({
     );
   }
 
+  const starters = Array.isArray(tenant.starter_questions)
+    ? (tenant.starter_questions as unknown[]).filter(
+        (q): q is string => typeof q === "string" && q.trim().length > 0,
+      )
+    : [];
+
   return (
     <ChatWidget
       tenantId={tenantId}
       businessName={tenant.business_name}
       brandColor={tenant.brand_color}
+      logoUrl={tenant.logo_url ?? null}
+      greeting={tenant.greeting_message ?? null}
+      starterQuestions={starters}
     />
   );
 }

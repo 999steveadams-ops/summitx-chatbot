@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { storeLogo } from "@/lib/logo";
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
 
@@ -42,6 +43,15 @@ export async function updateTenant(formData: FormData) {
   const business_name = String(formData.get("business_name") ?? "").trim();
   const system_prompt = String(formData.get("system_prompt") ?? "").trim();
   const brand_color = String(formData.get("brand_color") ?? "").trim();
+  const greeting_message = String(formData.get("greeting_message") ?? "").trim();
+  const launcher_text = String(formData.get("launcher_text") ?? "").trim();
+  const notification_email = String(formData.get("notification_email") ?? "").trim();
+  // Starter questions arrive one-per-line in a textarea.
+  const starter_questions = String(formData.get("starter_questions") ?? "")
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(0, 6);
 
   if (!id) return;
 
@@ -51,10 +61,44 @@ export async function updateTenant(formData: FormData) {
       ...(business_name ? { business_name } : {}),
       system_prompt,
       ...(HEX.test(brand_color) ? { brand_color } : {}),
+      greeting_message: greeting_message || null,
+      launcher_text: launcher_text || null,
+      notification_email: notification_email || null,
+      starter_questions,
     })
     .eq("id", id);
 
   revalidatePath("/admin");
+}
+
+export async function uploadLogo(
+  formData: FormData,
+): Promise<{ ok: boolean; message: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, message: "Not signed in." };
+
+  const tenantId = String(formData.get("tenant_id") ?? "");
+  const file = formData.get("logo");
+  if (!tenantId || !(file instanceof File)) {
+    return { ok: false, message: "Choose a PNG file first." };
+  }
+
+  const admin = createAdminClient();
+  const { data: isStaff } = await admin
+    .from("admins")
+    .select("user_id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!isStaff) return { ok: false, message: "Staff only." };
+
+  const res = await storeLogo(tenantId, file);
+  if (!res.ok) return { ok: false, message: res.error };
+
+  revalidatePath("/admin");
+  return { ok: true, message: "Logo updated." };
 }
 
 export async function deleteTenant(formData: FormData) {

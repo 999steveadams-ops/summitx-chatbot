@@ -5,6 +5,8 @@ import { DefaultChatTransport, type UIMessage } from "ai";
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 
+const DEFAULT_GREETING = "👋 Hi! How can I help you today?";
+
 /**
  * Assistant replies come back as Markdown. Render a deliberately small subset so
  * the bubble stays compact and nothing can inject raw HTML (react-markdown does
@@ -20,13 +22,9 @@ function Markdown({ children }: { children: string }) {
           ol: ({ children }) => (
             <ol className="space-y-1 [&_li]:list-decimal">{children}</ol>
           ),
-          strong: ({ children }) => (
-            <strong className="font-semibold">{children}</strong>
-          ),
+          strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
           code: ({ children }) => (
-            <code className="rounded bg-black/10 px-1 py-0.5 text-[12px]">
-              {children}
-            </code>
+            <code className="rounded bg-black/10 px-1 py-0.5 text-[12px]">{children}</code>
           ),
           a: ({ href, children }) => (
             <a href={href} target="_blank" rel="noopener noreferrer nofollow">
@@ -52,24 +50,29 @@ export default function ChatWidget({
   tenantId,
   businessName,
   brandColor,
+  logoUrl,
+  greeting,
+  starterQuestions,
 }: {
   tenantId: string;
   businessName: string;
   brandColor: string;
+  logoUrl: string | null;
+  greeting: string | null;
+  starterQuestions: string[];
 }) {
   const [input, setInput] = useState("");
+  const [feedback, setFeedback] = useState<Record<number, "up" | "down">>({});
+  const [showLead, setShowLead] = useState(false);
+  const [leadDone, setLeadDone] = useState(false);
 
-  // One conversation per browser tab/session; visitorId persists across visits so
-  // the portal can tell repeat visitors apart. Created lazily on the client only.
+  // One conversation per browser tab/session; visitorId persists across visits.
   const [ids] = useState(() => {
-    if (typeof window === "undefined") {
-      return { conversationId: "", visitorId: "" };
-    }
+    if (typeof window === "undefined") return { conversationId: "", visitorId: "" };
     const newId = () =>
       typeof crypto !== "undefined" && crypto.randomUUID
         ? crypto.randomUUID()
         : String(Date.now());
-
     const convKey = `summitx_conv_${tenantId}`;
     const visKey = "summitx_visitor";
     let conversationId = sessionStorage.getItem(convKey) ?? "";
@@ -88,30 +91,51 @@ export default function ChatWidget({
   const { messages, sendMessage, status } = useChat({
     transport: new DefaultChatTransport({
       api: "/api/chat",
-      body: {
-        tenantId,
-        conversationId: ids.conversationId,
-        visitorId: ids.visitorId,
-      },
+      body: { tenantId, conversationId: ids.conversationId, visitorId: ids.visitorId },
     }),
   });
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const busy = status === "submitted" || status === "streaming";
+  const userTurns = messages.filter((m) => m.role === "user").length;
 
   useEffect(() => {
     scrollRef.current?.scrollTo({
       top: scrollRef.current.scrollHeight,
       behavior: "smooth",
     });
-  }, [messages, busy]);
+  }, [messages, busy, showLead]);
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const text = input.trim();
-    if (!text || busy) return;
-    sendMessage({ text });
+  // Offer the lead form once the visitor is engaged (after a few exchanges),
+  // unless they already submitted or dismissed it.
+  useEffect(() => {
+    if (!leadDone && !showLead && userTurns >= 3) setShowLead(true);
+  }, [userTurns, leadDone, showLead]);
+
+  function send(text: string) {
+    const t = text.trim();
+    if (!t || busy) return;
+    sendMessage({ text: t });
     setInput("");
+  }
+
+  async function rate(index: number, rating: "up" | "down") {
+    if (feedback[index]) return;
+    setFeedback((f) => ({ ...f, [index]: rating }));
+    try {
+      await fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tenantId,
+          conversationId: ids.conversationId,
+          messageIndex: index,
+          rating,
+        }),
+      });
+    } catch {
+      /* best-effort */
+    }
   }
 
   return (
@@ -124,9 +148,18 @@ export default function ChatWidget({
         className="flex items-center gap-3 px-4 py-3 text-white"
         style={{ backgroundColor: "var(--brand)" }}
       >
-        <div className="grid h-8 w-8 place-items-center rounded-full bg-white/25 text-sm font-bold">
-          {businessName.charAt(0).toUpperCase()}
-        </div>
+        {logoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={logoUrl}
+            alt={businessName}
+            className="h-9 w-9 rounded-full bg-white object-cover ring-1 ring-white/40"
+          />
+        ) : (
+          <div className="grid h-8 w-8 place-items-center rounded-full bg-white/25 text-sm font-bold">
+            {businessName.charAt(0).toUpperCase()}
+          </div>
+        )}
         <div className="leading-tight">
           <p className="text-sm font-semibold">{businessName}</p>
           <p className="text-xs text-white/80">AI assistant</p>
@@ -136,30 +169,68 @@ export default function ChatWidget({
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto bg-zinc-50 p-4">
         {messages.length === 0 && (
-          <div className="mt-6 text-center text-sm text-zinc-500">
-            👋 Hi! Ask me anything about {businessName}.
+          <div className="mt-4">
+            <div className="rounded-2xl rounded-bl-sm border border-zinc-200 bg-white px-3.5 py-2.5 text-sm text-zinc-700">
+              {greeting?.trim() || `👋 Hi! Ask me anything about ${businessName}.` || DEFAULT_GREETING}
+            </div>
+            {starterQuestions.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {starterQuestions.map((q) => (
+                  <button
+                    key={q}
+                    onClick={() => send(q)}
+                    className="rounded-full border px-3 py-1.5 text-xs font-medium transition hover:bg-zinc-50"
+                    style={{ borderColor: "var(--brand)", color: "var(--brand)" }}
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
-        {messages.map((m) => {
+        {messages.map((m, i) => {
           const isUser = m.role === "user";
           return (
             <div
               key={m.id}
               className={`flex ${isUser ? "justify-end" : "justify-start"}`}
             >
-              <div
-                className={`max-w-[80%] whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-sm ${
-                  isUser
-                    ? "rounded-br-sm text-white"
-                    : "rounded-bl-sm border border-zinc-200 bg-white text-zinc-800"
-                }`}
-                style={isUser ? { backgroundColor: "var(--brand)" } : undefined}
-              >
-                {isUser ? (
-                  messageText(m)
-                ) : (
-                  <Markdown>{messageText(m)}</Markdown>
+              <div className="max-w-[85%]">
+                <div
+                  className={`whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-sm ${
+                    isUser
+                      ? "rounded-br-sm text-white"
+                      : "rounded-bl-sm border border-zinc-200 bg-white text-zinc-800"
+                  }`}
+                  style={isUser ? { backgroundColor: "var(--brand)" } : undefined}
+                >
+                  {isUser ? messageText(m) : <Markdown>{messageText(m)}</Markdown>}
+                </div>
+
+                {/* Feedback on assistant replies (skip while still streaming) */}
+                {!isUser && !(busy && i === messages.length - 1) && (
+                  <div className="mt-1 flex gap-1.5 pl-1">
+                    <button
+                      onClick={() => rate(i, "up")}
+                      aria-label="Helpful"
+                      className={`text-xs transition ${
+                        feedback[i] === "up" ? "opacity-100" : "opacity-40 hover:opacity-80"
+                      }`}
+                    >
+                      👍
+                    </button>
+                    <button
+                      onClick={() => rate(i, "down")}
+                      aria-label="Not helpful"
+                      className={`text-xs transition ${
+                        feedback[i] === "down" ? "opacity-100" : "opacity-40 hover:opacity-80"
+                      }`}
+                    >
+                      👎
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
@@ -181,31 +252,141 @@ export default function ChatWidget({
             Something went wrong. Please try again.
           </div>
         )}
+
+        {showLead && !leadDone && (
+          <LeadForm
+            tenantId={tenantId}
+            conversationId={ids.conversationId}
+            onClose={() => setShowLead(false)}
+            onDone={() => {
+              setLeadDone(true);
+              setShowLead(false);
+            }}
+          />
+        )}
       </div>
 
       {/* Composer */}
-      <form onSubmit={handleSubmit} className="flex gap-2 border-t border-zinc-200 p-3">
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Type your message…"
-          className="flex-1 rounded-full border border-zinc-300 px-4 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-400"
-          aria-label="Message"
-        />
-        <button
-          type="submit"
-          disabled={busy || !input.trim()}
-          className="rounded-full px-4 py-2 text-sm font-semibold text-white transition disabled:opacity-40"
-          style={{ backgroundColor: "var(--brand)" }}
-        >
-          Send
-        </button>
-      </form>
+      <div className="border-t border-zinc-200">
+        {!leadDone && messages.length > 0 && (
+          <button
+            onClick={() => setShowLead(true)}
+            className="w-full py-1.5 text-center text-xs font-medium hover:underline"
+            style={{ color: "var(--brand)" }}
+          >
+            📞 Request a callback
+          </button>
+        )}
+        <form onSubmit={(e) => { e.preventDefault(); send(input); }} className="flex gap-2 p-3 pt-1">
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Type your message…"
+            className="flex-1 rounded-full border border-zinc-300 px-4 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+            aria-label="Message"
+          />
+          <button
+            type="submit"
+            disabled={busy || !input.trim()}
+            className="rounded-full px-4 py-2 text-sm font-semibold text-white transition disabled:opacity-40"
+            style={{ backgroundColor: "var(--brand)" }}
+          >
+            Send
+          </button>
+        </form>
+      </div>
 
-      <p className="pb-2 text-center text-[10px] text-zinc-400">
-        Powered by SummitX ChatBot
-      </p>
+      <p className="pb-2 text-center text-[10px] text-zinc-400">Powered by Summit X</p>
     </div>
+  );
+}
+
+function LeadForm({
+  tenantId,
+  conversationId,
+  onClose,
+  onDone,
+}: {
+  tenantId: string;
+  conversationId: string;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!email.trim() && !phone.trim()) {
+      setErr("Please add an email or phone number.");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await fetch("/api/lead", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenantId, conversationId, name, email, phone }),
+      });
+      if (!res.ok) throw new Error();
+      onDone();
+    } catch {
+      setErr("Couldn't send that. Please try again.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form
+      onSubmit={submit}
+      className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm"
+    >
+      <div className="mb-2 flex items-center justify-between">
+        <p className="text-sm font-semibold text-zinc-800">Want the team to follow up?</p>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Dismiss"
+          className="text-zinc-400 hover:text-zinc-600"
+        >
+          ✕
+        </button>
+      </div>
+      <div className="space-y-2">
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Name"
+          className="w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm outline-none focus:border-zinc-400"
+        />
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="Email"
+          className="w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm outline-none focus:border-zinc-400"
+        />
+        <input
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          placeholder="Phone"
+          className="w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm outline-none focus:border-zinc-400"
+        />
+      </div>
+      {err && <p className="mt-1 text-xs text-red-500">{err}</p>}
+      <button
+        type="submit"
+        disabled={busy}
+        className="mt-2 w-full rounded-lg py-2 text-sm font-semibold text-white transition disabled:opacity-50"
+        style={{ backgroundColor: "var(--brand)" }}
+      >
+        {busy ? "Sending…" : "Send my details"}
+      </button>
+    </form>
   );
 }
 

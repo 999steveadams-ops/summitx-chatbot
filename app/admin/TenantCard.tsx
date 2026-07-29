@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useFormStatus } from "react-dom";
 import type { Tenant } from "@/lib/types";
-import { createClientLogin, deleteTenant, updateTenant } from "./actions";
+import { createClientLogin, deleteTenant, updateTenant, uploadLogo } from "./actions";
 
 /**
  * Crawl the client's website so the assistant answers from real content
@@ -188,6 +188,69 @@ function SaveButton() {
   );
 }
 
+/** PNG logo upload for the widget header + launcher. */
+function LogoUploader({ tenantId, logoUrl }: { tenantId: string; logoUrl: string | null }) {
+  const [busy, setBusy] = useState(false);
+  const [preview, setPreview] = useState<string | null>(logoUrl);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.type !== "image/png") {
+      setMsg({ ok: false, text: "Logo must be a PNG." });
+      return;
+    }
+    setBusy(true);
+    setMsg(null);
+    const fd = new FormData();
+    fd.set("tenant_id", tenantId);
+    fd.set("logo", file);
+    const res = await uploadLogo(fd);
+    setMsg({ ok: res.ok, text: res.message });
+    if (res.ok) setPreview(URL.createObjectURL(file));
+    setBusy(false);
+  }
+
+  return (
+    <div className="mt-6 border-t border-zinc-100 pt-4">
+      <p className="text-sm font-semibold text-zinc-700">Logo (PNG)</p>
+      <p className="mb-2 text-xs text-zinc-400">
+        Shown in the widget header and on the launcher button.
+      </p>
+      <div className="flex items-center gap-3">
+        {preview ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={preview}
+            alt="Logo"
+            className="h-12 w-12 rounded-full border border-zinc-200 object-cover"
+          />
+        ) : (
+          <div className="grid h-12 w-12 place-items-center rounded-full bg-zinc-100 text-xs text-zinc-400">
+            none
+          </div>
+        )}
+        <label className="cursor-pointer rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-700 transition hover:border-zinc-400">
+          {busy ? "Uploading…" : "Upload PNG"}
+          <input
+            type="file"
+            accept="image/png"
+            className="hidden"
+            disabled={busy}
+            onChange={onFile}
+          />
+        </label>
+      </div>
+      {msg && (
+        <p className={`mt-2 text-xs ${msg.ok ? "text-green-600" : "text-red-600"}`}>
+          {msg.text}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function TenantCard({
   tenant,
   appUrl,
@@ -279,10 +342,66 @@ export default function TenantCard({
           />
         </div>
 
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-zinc-700">
+              Welcome message
+            </label>
+            <input
+              name="greeting_message"
+              defaultValue={tenant.greeting_message ?? ""}
+              placeholder="👋 Hi! How can I help you today?"
+              className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 outline-none focus:border-indigo-500"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-zinc-700">
+              Launcher bubble text
+            </label>
+            <input
+              name="launcher_text"
+              defaultValue={tenant.launcher_text ?? ""}
+              placeholder="Have any questions? Ask away!"
+              className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 outline-none focus:border-indigo-500"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm font-medium text-zinc-700">
+            Starter questions{" "}
+            <span className="font-normal text-zinc-400">(one per line, up to 6)</span>
+          </label>
+          <textarea
+            name="starter_questions"
+            rows={3}
+            defaultValue={(tenant.starter_questions ?? []).join("\n")}
+            placeholder={"What are your prices?\nDo you do weddings?\nWhat areas do you serve?"}
+            className="w-full resize-y rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 outline-none focus:border-indigo-500"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm font-medium text-zinc-700">
+            Client notification email{" "}
+            <span className="font-normal text-zinc-400">(gets lead alerts)</span>
+          </label>
+          <input
+            name="notification_email"
+            type="email"
+            defaultValue={tenant.notification_email ?? ""}
+            placeholder="owner@theirbusiness.com"
+            className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 outline-none focus:border-indigo-500"
+          />
+        </div>
+
         <div className="flex items-center justify-between">
           <SaveButton />
         </div>
       </form>
+
+      {/* Logo upload */}
+      <LogoUploader tenantId={tenant.id} logoUrl={tenant.logo_url ?? null} />
 
       {/* Embed snippet */}
       <div className="mt-6 border-t border-zinc-100 pt-4">

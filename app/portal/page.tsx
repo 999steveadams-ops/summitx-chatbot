@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { signOutPortal } from "./actions";
 import DateFilter from "./DateFilter";
+import PortalLogoUploader from "./PortalLogoUploader";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +59,36 @@ export default async function PortalPage({
 
   const { data, error } = await query;
   const rows = (data ?? []) as unknown as Row[];
-  const businessName = rows[0]?.tenants?.business_name ?? "Your business";
+
+  // The client's own tenant (for logo upload + name), independent of whether any
+  // conversations exist yet.
+  const { data: membership } = await supabase
+    .from("tenant_members")
+    .select("tenant_id, tenants(id, business_name, logo_url)")
+    .limit(1)
+    .maybeSingle();
+  const myTenant = (membership as unknown as {
+    tenant_id: string;
+    tenants: { business_name: string; logo_url: string | null }[] | null;
+  } | null);
+  const tenantId = myTenant?.tenant_id ?? rows[0]?.tenant_id ?? null;
+  const businessName =
+    myTenant?.tenants?.[0]?.business_name ?? rows[0]?.tenants?.business_name ?? "Your business";
+  const myLogo = myTenant?.tenants?.[0]?.logo_url ?? null;
+
+  // Recent leads for this client (RLS scopes to their tenant).
+  const { data: leadRows } = await supabase
+    .from("leads")
+    .select("id, name, email, phone, created_at")
+    .order("created_at", { ascending: false })
+    .limit(20);
+  const leads = (leadRows ?? []) as {
+    id: string;
+    name: string | null;
+    email: string | null;
+    phone: string | null;
+    created_at: string;
+  }[];
 
   return (
     <div className="flex flex-1 flex-col bg-zinc-50 text-zinc-900">
@@ -82,6 +112,42 @@ export default async function PortalPage({
       </header>
 
       <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-8">
+        {tenantId && (
+          <div className="mb-6 rounded-2xl border border-zinc-200 bg-white p-5">
+            <p className="mb-1 text-sm font-semibold text-zinc-700">Your logo (PNG)</p>
+            <p className="mb-3 text-xs text-zinc-400">
+              Appears in your chat widget header and launcher button.
+            </p>
+            <PortalLogoUploader tenantId={tenantId} logoUrl={myLogo} />
+          </div>
+        )}
+
+        {leads.length > 0 && (
+          <div className="mb-6 rounded-2xl border border-zinc-200 bg-white p-5">
+            <p className="mb-3 text-sm font-semibold text-zinc-700">
+              Leads ({leads.length})
+            </p>
+            <div className="space-y-2">
+              {leads.map((l) => (
+                <div
+                  key={l.id}
+                  className="flex items-center justify-between rounded-lg border border-zinc-100 px-3 py-2 text-sm"
+                >
+                  <span>
+                    <span className="font-medium">{l.name || "Someone"}</span>{" "}
+                    <span className="text-zinc-500">
+                      {l.email || l.phone || "no contact"}
+                    </span>
+                  </span>
+                  <span className="text-xs text-zinc-400">
+                    {new Date(l.created_at).toLocaleDateString("en-US")}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <h1 className="text-2xl font-bold">Chat history</h1>
         <p className="mb-6 text-sm text-zinc-500">
           Every conversation visitors had with {businessName}&apos;s assistant.
