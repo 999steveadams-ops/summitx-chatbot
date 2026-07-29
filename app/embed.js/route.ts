@@ -26,7 +26,14 @@ const SCRIPT = /* js */ `(function () {
   }
 
   var ID = "summitx-chatbot-" + tenantId;
-  if (document.getElementById(ID)) return; // guard against double-inject
+
+  // Guard against double-inject (e.g. the plugin plus a hand-pasted snippet).
+  // A synchronous window flag is required: deferred copies of this script all
+  // run before DOMContentLoaded, so a DOM check alone would let each one
+  // register a listener and mount its own widget.
+  window.__summitxChatbot = window.__summitxChatbot || {};
+  if (window.__summitxChatbot[tenantId] || document.getElementById(ID)) return;
+  window.__summitxChatbot[tenantId] = true;
 
   var open = false;
 
